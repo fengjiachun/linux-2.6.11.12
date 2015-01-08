@@ -831,7 +831,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	lock_sock(sk);
 	TCP_CHECK_TIMER(sk);
 
-	/* 根据标志计算阻塞超时时间 */
+	/* 根据标志计算阻塞超时时间，非阻塞套接字的timeo就是0 */
 	flags = msg->msg_flags;
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
