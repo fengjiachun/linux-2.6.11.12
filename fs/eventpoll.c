@@ -496,6 +496,7 @@ asmlinkage long sys_epoll_create(int size)
 		goto eexit_1;
 
 	/* Setup the file internal data structure ( "struct eventpoll" ) */
+	// 创建红黑树和就绪链表
 	error = ep_file_init(file);
 	if (error)
 		goto eexit_2;
