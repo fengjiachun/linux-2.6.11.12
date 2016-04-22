@@ -580,7 +580,7 @@ sys_epoll_ctl(int epfd, int op, int fd, struct epoll_event __user *event)
 	case EPOLL_CTL_ADD:
 		if (!epi) {
 			epds.events |= POLLERR | POLLHUP;
-
+			// 将epitem插入红黑树, 并注册ep_poll_callback
 			error = ep_insert(ep, &epds, tfile, fd);
 		} else
 			error = -EEXIST;
@@ -664,6 +664,7 @@ asmlinkage long sys_epoll_wait(int epfd, struct epoll_event __user *events,
 	ep = file->private_data;
 
 	/* Time to fish for events ... */
+	// 主逻辑: ep_poll() --> ep_events_transfer() --> ep_send_events()
 	error = ep_poll(ep, events, maxevents, timeout);
 
 eexit_2:
@@ -966,6 +967,7 @@ static int ep_insert(struct eventpoll *ep, struct epoll_event *event,
 
 	/* Add the current item to the list of active epoll hook for this file */
 	spin_lock(&tfile->f_ep_lock);
+	// 1.注册回调
 	list_add_tail(&epi->fllink, &tfile->f_ep_links);
 	spin_unlock(&tfile->f_ep_lock);
 
@@ -973,6 +975,7 @@ static int ep_insert(struct eventpoll *ep, struct epoll_event *event,
 	write_lock_irqsave(&ep->lock, flags);
 
 	/* Add the current item to the rb-tree */
+	// 2.epitem插入红黑树
 	ep_rbtree_insert(ep, epi);
 
 	/* If the file is already "ready" we drop it inside the ready list */
@@ -1399,6 +1402,7 @@ static void ep_reinject_items(struct eventpoll *ep, struct list_head *txlist)
 		epi = list_entry(txlist->next, struct epitem, txlink);
 
 		/* Unlink the current item from the transfer list */
+		// 先从readylist删除 如果是epoll LT后面再放进去
 		EP_LIST_DEL(&epi->txlink);
 
 		/*
@@ -1408,9 +1412,9 @@ static void ep_reinject_items(struct eventpoll *ep, struct list_head *txlist)
 		 * item is set to have an Edge Triggered behaviour, we don't have
 		 * to push it back either.
 		 */
-		if (EP_RB_LINKED(&epi->rbn) && !(epi->event.events & EPOLLET) &&
+		if (EP_RB_LINKED(&epi->rbn) && !(epi->event.events & EPOLLET /* 如果不是epoll ET, epitem不会再进入readylist */) &&
 		    (epi->revents & epi->event.events) && !EP_IS_LINKED(&epi->rdllink)) {
-			list_add_tail(&epi->rdllink, &ep->rdllist);
+			list_add_tail(&epi->rdllink, &ep->rdllist); // 再进入readylist(epoll LT)
 			ricnt++;
 		}
 	}
@@ -1457,6 +1461,7 @@ static int ep_events_transfer(struct eventpoll *ep,
 		eventcnt = ep_send_events(ep, &txlist, events);
 
 		/* Reinject ready items into the ready list */
+		// 清空readlylist, 如果是epoll LT, 再重新放回readylist
 		ep_reinject_items(ep, &txlist);
 	}
 
@@ -1530,7 +1535,7 @@ retry:
 	 */
 	if (!res && eavail &&
 	    !(res = ep_events_transfer(ep, events, maxevents)) && jtimeout)
-		goto retry;
+		goto retry; // 回去等readylist中有数据为止 (ep_poll_callback)
 
 	return res;
 }
