@@ -628,11 +628,12 @@ eexit_1:
 asmlinkage long sys_epoll_wait(int epfd, struct epoll_event __user *events,
 			       int maxevents, int timeout)
 {
-	// epoll_wait的工作流程概述:
+    // epoll_wait的工作流程概述:
     // 1. epoll_wait调用ep_poll, 当rdlist(ready-list)为空(无就绪fd)时挂起当前进程, 直到rdlist不为空时进程才被唤醒;
     // 2. 文件fd状态改变(buffer由不可读变为可读或由不可写变为可写), 导致相应fd上的回调函数ep_poll_callback()被调用;
     // 3. ep_poll_callback将相应fd对应epitem加入rdlist, 导致rdlist不空, 进程被唤醒, epoll_wait得以继续执行;
-    // 4. ep_events_transfer函数将rdlist中的epitem拷贝到txlist中, 并将rdlist清空(如果是epoll LT, 会再重新放回readylist);
+    // 4. ep_events_transfer函数将rdlist中的epitem拷贝到txlist中,
+    //      并将rdlist清空(如果是epoll LT, 并且文件fd状态没改变(比如只读了部分数据并不会改变状态)的情况下会再重新放回rdlist);
     // 5. ep_send_events函数(很关键), 它扫描txlist中的每个epitem, 调用其关联fd对用的poll方法.
     //      此时对poll的调用仅仅是取得fd上较新的events(防止之前events被更新),
     //      之后将取得的events和相应的fd发送到用户空间(封装在struct epoll_event, 从epoll_wait返回).
